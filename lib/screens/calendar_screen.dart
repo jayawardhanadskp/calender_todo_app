@@ -1,8 +1,10 @@
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:intl/intl.dart';
-import '../model/event.dart';
+import 'package:timezone/timezone.dart' as tz;
+import '../notification/notification_service.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -12,21 +14,46 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  // hoald the appoinments
+  // hold appointments
   List<Appointment> _appointments = [];
 
-  // hold the events categorized by date
+  // hold events categorized by date
   Map<DateTime, List<Appointment>> _eventsMap = {};
 
   @override
   void initState() {
     super.initState();
+    fetchHolidays();
     fetchEvents();
   }
 
-  // fetch events from firestore
-  Stream<List<Appointment>> fetchEvents() {
-    return FirebaseFirestore.instance.collection('events').snapshots().map((snapshot) {
+  // fetch holidays
+  void fetchHolidays() {
+    FirebaseFirestore.instance.collection('holidays').snapshots().listen((snapshot) {
+      snapshot.docs.forEach((doc) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        DateTime holidayDate = (data['date'] as Timestamp).toDate();
+        Appointment holiday = Appointment(
+          startTime: holidayDate,
+          endTime: holidayDate,
+          subject: 'Holiday',
+          color: Colors.red,
+        );
+        setState(() {
+          _appointments.add(holiday);
+          DateTime eventDate = DateTime(holidayDate.year, holidayDate.month, holidayDate.day);
+          if (!_eventsMap.containsKey(eventDate)) {
+            _eventsMap[eventDate] = [];
+          }
+          _eventsMap[eventDate]!.add(holiday);
+        });
+      });
+    });
+  }
+
+  // fetch events
+  void fetchEvents() {
+    FirebaseFirestore.instance.collection('events').snapshots().listen((snapshot) {
       List<Appointment> appointments = [];
       Map<DateTime, List<Appointment>> eventsMap = {};
 
@@ -50,12 +77,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
         );
         eventsMap[eventDate]!.add(appointment);
         appointments.add(appointment);
+        scheduleNotificationsForEvent(appointment);
       });
 
-
-      _eventsMap = eventsMap;
-      return appointments;
+      setState(() {
+        _eventsMap = eventsMap;
+        _appointments.addAll(appointments);
+      });
     });
+  }
+
+  // schedule notifications
+  void scheduleNotificationsForEvent(Appointment appointment) {
+    DateTime toDate = appointment.startTime;
+
+    scheduleNotification(
+      toDate.subtract(const Duration(minutes: 15)),
+      appointment.subject,
+      appointment.notes ?? '',
+    );
+    scheduleNotification(
+      toDate.subtract(const Duration(hours: 1)),
+      appointment.subject,
+      appointment.notes ?? '',
+    );
+    scheduleNotification(
+      toDate.subtract(const Duration(days: 1)),
+      appointment.subject,
+      appointment.notes ?? '',
+    );
   }
 
   @override
@@ -64,30 +114,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       appBar: AppBar(
         title: const Text('Calendar'),
       ),
-      body: StreamBuilder<List<Appointment>>(
-
-        stream: fetchEvents(),
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            // fetched data
-            _appointments = snapshot.data!;
-            return SfCalendar(
-              view: CalendarView.month,
-              initialSelectedDate: DateTime.now(),
-              dataSource: EventDataSource(_appointments),
-              monthCellBuilder: monthCellBuilder,
-              onTap: calendarTapped,
-            );
-          } else if (snapshot.hasError) {
-            return Center(
-              child: Text('Error fetching events: ${snapshot.error}'),
-            );
-          } else {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-        },
+      body: SfCalendar(
+        view: CalendarView.month,
+        initialSelectedDate: DateTime.now(),
+        dataSource: EventDataSource(_appointments),
+        monthCellBuilder: monthCellBuilder,
+        onTap: calendarTapped,
       ),
     );
   }
@@ -96,6 +128,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget monthCellBuilder(BuildContext context, MonthCellDetails details) {
     final DateTime date = details.date;
     final bool hasEvent = _eventsMap.containsKey(DateTime(date.year, date.month, date.day));
+    final bool isHoliday = _appointments.any((appointment) =>
+    appointment.startTime.year == date.year &&
+        appointment.startTime.month == date.month &&
+        appointment.startTime.day == date.day &&
+        appointment.subject == 'Holiday');
 
     return Stack(
       children: [
@@ -104,8 +141,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           child: Text(
             DateFormat.d().format(date),
             style: TextStyle(
-              color: hasEvent ? Colors.red : Colors.black,
-              fontWeight: hasEvent ? FontWeight.bold : FontWeight.normal,
+              color:  isHoliday ? Colors.red : hasEvent ? Colors.green :Colors.black,
+              fontWeight: hasEvent || isHoliday ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ),
@@ -115,10 +152,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
             right: 4,
             child: Icon(
               Icons.circle,
-              color: Colors.red,
+              color: Colors.green,
               size: 8,
             ),
           ),
+        if (isHoliday)
+          const Positioned(
+              bottom: 4,
+              right: 4,
+              child: Icon(Icons.circle, color: Colors.red,size: 8,))
       ],
     );
   }
@@ -127,7 +169,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void calendarTapped(CalendarTapDetails details) {
     if (details.targetElement == CalendarElement.calendarCell) {
       DateTime selectedDate = details.date!;
-      // fetch events for selected date
+      // Fetch events for selected date
       List<Appointment>? events = _eventsMap[DateTime(selectedDate.year, selectedDate.month, selectedDate.day)];
       if (events != null && events.isNotEmpty) {
         showModalBottomSheet(
@@ -138,7 +180,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  //bottom sheet
+  // bottom sheet
   Widget buildBottomSheet(List<Appointment> events) {
     return Padding(
       padding: const EdgeInsets.all(10.0),
@@ -164,17 +206,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 const Text('From', style: TextStyle(fontSize: 20, color: Colors.black45)),
                 Text('${DateFormat.yMMMd().format(event.startTime)} - ${DateFormat.Hm().format(event.startTime)}', style: const TextStyle(fontSize: 28)),
                 const SizedBox(height: 10),
-
                 const Text('To', style: TextStyle(fontSize: 20, color: Colors.black45)),
                 Text('${DateFormat.yMMMd().format(event.endTime)} - ${DateFormat.Hm().format(event.endTime)}', style: const TextStyle(fontSize: 28)),
                 const SizedBox(height: 10),
-
                 const Text('Notes', style: TextStyle(fontSize: 20, color: Colors.black45)),
                 if (event.notes != null && event.notes!.isNotEmpty)
                   ...[
                     const SizedBox(height: 5),
                     Text(event.notes!, style: const TextStyle(fontSize: 28)),
                   ],
+                const SizedBox(height: 10,),
+                const Divider(thickness: 2,)
               ],
             ),
           );
