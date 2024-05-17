@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../widgets/add_task.dart';
+import '../widgets/select_type.dart';
 import 'calendar_screen.dart';
 
 class HomePage extends StatefulWidget {
@@ -17,16 +16,19 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Calendar Event App'),
         centerTitle: true,
+        backgroundColor: Colors.blue.shade100,
       ),
-      body: const CalendarScreen(),
+
+
+      body: const CalendarScreen(), // calendar
 
       // add event button
       floatingActionButton: FloatingActionButton(
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.event),
         onPressed: () {
           // navigate to add event
           Navigator.push(
-              context, MaterialPageRoute(builder: (context) => AddTask()));
+              context, MaterialPageRoute(builder: (context) => const SelectType()));
         },
       ),
     );
