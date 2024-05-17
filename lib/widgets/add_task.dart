@@ -42,6 +42,8 @@ class _AddTaskState extends State<AddTask> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.blue.shade50,
+
         leading: const CloseButton(),
         actions: saveEvent(),
       ),
@@ -65,19 +67,21 @@ class _AddTaskState extends State<AddTask> {
                 ),
                 const SizedBox(height: 15,),
 
-                // from
-                buildDateTimePicker(
-                  label: 'From',
-                  selectedDate: fromDate,
-                  onDateChanged: (date) => setState(() => fromDate = date),
-                ),
-                const SizedBox(height: 15,),
-
                 // to
                 buildDateTimePicker(
                   label: 'To',
                   selectedDate: toDate,
                   onDateChanged: (date) => setState(() => toDate = date),
+                  isFromDate: false,
+                ),
+                const SizedBox(height: 15,),
+
+                // from
+                buildDateTimePicker(
+                  label: 'From',
+                  selectedDate: fromDate,
+                  onDateChanged: (date) => setState(() => fromDate = date),
+                  isFromDate: true,
                 ),
                 const SizedBox(height: 15,),
 
@@ -107,7 +111,7 @@ class _AddTaskState extends State<AddTask> {
           saveToFirestore();
         }
       },
-      icon: const Icon(Icons.save),
+      icon: const Icon(Icons.save,),
     ),
   ];
 
@@ -138,7 +142,7 @@ class _AddTaskState extends State<AddTask> {
   void scheduleNotificationsForEvent(Event event) {
     DateTime eventTime = event.to;
 
-    // Schedule notifications for 15 mins, 1 hour, and 1 day before the event's end time
+    // schedule notifications for 15 mins, 1 hour, 1 day before the event's end time
     scheduleNotification(eventTime.subtract(Duration(minutes: 15)), event.title, event.description ?? '');
     scheduleNotification(eventTime.subtract(Duration(hours: 1)), event.title, event.description ?? '');
     scheduleNotification(eventTime.subtract(Duration(days: 1)), event.title, event.description ?? '');
@@ -149,6 +153,7 @@ class _AddTaskState extends State<AddTask> {
     required String label,
     required DateTime selectedDate,
     required ValueChanged<DateTime> onDateChanged,
+    required bool isFromDate,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -161,14 +166,14 @@ class _AddTaskState extends State<AddTask> {
               flex: 2,
               child: buildDropdownField(
                 text: DateFormat.yMd().format(selectedDate),
-                onClicked: () => pickDateTime(context, selectedDate, onDateChanged, true),
+                onClicked: () => pickDateTime(context, selectedDate, onDateChanged, true, isFromDate),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: buildDropdownField(
                 text: DateFormat.Hm().format(selectedDate),
-                onClicked: () => pickDateTime(context, selectedDate, onDateChanged, false),
+                onClicked: () => pickDateTime(context, selectedDate, onDateChanged, false, isFromDate),
               ),
             ),
           ],
@@ -176,6 +181,7 @@ class _AddTaskState extends State<AddTask> {
       ],
     );
   }
+
 
   Widget buildDropdownField({
     required String text,
@@ -193,7 +199,8 @@ class _AddTaskState extends State<AddTask> {
       BuildContext context,
       DateTime initialDate,
       ValueChanged<DateTime> onDateChanged,
-      bool isDate
+      bool isDate,
+      bool isFromDate,
       ) async {
     if (isDate) {
       final date = await showDatePicker(
@@ -207,13 +214,22 @@ class _AddTaskState extends State<AddTask> {
         final time = Duration(hours: initialDate.hour, minutes: initialDate.minute);
         final newDate = date.add(time);
 
-        // show snakbar message incorrect date selection
-        if (newDate.isBefore(fromDate)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('End date cannot be before start date')),
-          );
+        if (isFromDate) {
+          if (newDate.isAfter(toDate)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Start date cannot be after end date')),
+            );
+          } else {
+            onDateChanged(newDate);
+          }
         } else {
-          onDateChanged(newDate);
+          if (newDate.isBefore(fromDate)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('End date cannot be before start date')),
+            );
+          } else {
+            onDateChanged(newDate);
+          }
         }
       }
     } else {
@@ -224,18 +240,26 @@ class _AddTaskState extends State<AddTask> {
 
       if (time != null) {
         final newDate = DateTime(initialDate.year, initialDate.month, initialDate.day, time.hour, time.minute);
-        if (initialDate.year == fromDate.year &&
-            initialDate.month == fromDate.month &&
-            initialDate.day == fromDate.day &&
-            newDate.isBefore(fromDate)) {
-          // show snakbar message incorrect time selection
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('End time cannot be before start time')),
-          );
+
+        if (isFromDate) {
+          if (newDate.isAfter(toDate)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Start time cannot be after end time')),
+            );
+          } else {
+            onDateChanged(newDate);
+          }
         } else {
-          onDateChanged(newDate);
+          if (newDate.isBefore(fromDate)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('End time cannot be before start time')),
+            );
+          } else {
+            onDateChanged(newDate);
+          }
         }
       }
     }
   }
+
 }
